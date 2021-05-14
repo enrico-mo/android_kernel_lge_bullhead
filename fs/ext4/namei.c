@@ -1233,9 +1233,9 @@ static inline int ext4_match(struct ext4_filename *fname,
 	if (unlikely(!name)) {
 		if (fname->usr_fname->name[0] == '_') {
 			int ret;
-			if (de->name_len < 16)
+			if (de->name_len <= 32)
 				return 0;
-			ret = memcmp(de->name + de->name_len - 16,
+			ret = memcmp(de->name + ((de->name_len - 17) & ~15),
 				     fname->crypto_buf.name + 8, 16);
 			return (ret == 0) ? 1 : 0;
 		}
@@ -2497,7 +2497,6 @@ retry:
 	return err;
 }
 
-#if 0
 static int ext4_tmpfile(struct inode *dir, struct dentry *dentry, umode_t mode)
 {
 	handle_t *handle;
@@ -2535,7 +2534,6 @@ err_unlock_inode:
 	unlock_new_inode(inode);
 	return err;
 }
-#endif
 
 struct ext4_dir_entry_2 *ext4_init_dot_dotdot(struct inode *inode,
 			  struct ext4_dir_entry_2 *de,
@@ -3811,9 +3809,7 @@ const struct inode_operations ext4_dir_inode_operations = {
 	.mkdir		= ext4_mkdir,
 	.rmdir		= ext4_rmdir,
 	.mknod		= ext4_mknod,
-#if 0
 	.tmpfile	= ext4_tmpfile,
-#endif
 	.rename		= ext4_rename2,
 	.setattr	= ext4_setattr,
 	.setxattr	= generic_setxattr,

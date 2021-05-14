@@ -51,7 +51,6 @@
 #include <aniGlobal.h>
 #include "dot11f.h"
 #include "wlan_nlink_common.h"
-#include "wlan_btc_svc.h"
 #include "wlan_hdd_power.h"
 #include "wlan_hdd_trace.h"
 #include <linux/ieee80211.h>
@@ -874,7 +873,6 @@ static void hdd_SendAssociationEvent(struct net_device *dev,tCsrRoamInfo *pCsrRo
         }
 #endif
     }
-    send_btc_nlink_msg(type, 0);
 }
 
 static void hdd_connRemoveConnectInfo(hdd_station_ctx_t *pHddStaCtx)
@@ -4274,6 +4272,7 @@ static tANI_S32 hdd_ProcessGENIE(hdd_adapter_t *pAdapter,
     tDot11fIERSN dot11RSNIE;
     tDot11fIEWPA dot11WPAIE;
     tANI_U32 i;
+    tANI_U32 status;
     tANI_U8 *pRsnIe;
     tANI_U16 RSNIeLen;
     tPmkidCacheInfo PMKIDCache[4]; // Local transfer memory
@@ -4299,10 +4298,17 @@ static tANI_S32 hdd_ProcessGENIE(hdd_adapter_t *pAdapter,
         pRsnIe = gen_ie + 2;
         RSNIeLen = gen_ie_len - 2;
         // Unpack the RSN IE
-        dot11fUnpackIeRSN((tpAniSirGlobal) halHandle,
+        status = dot11fUnpackIeRSN((tpAniSirGlobal) halHandle,
                             pRsnIe,
                             RSNIeLen,
                             &dot11RSNIE);
+        if (DOT11F_FAILED(status))
+        {
+            hddLog(LOGE,
+                       FL("Parse failure in hdd_ProcessGENIE (0x%08x)"),
+                       status);
+            return -EINVAL;
+        }
         // Copy out the encryption and authentication types
         hddLog(LOG1, FL("%s: pairwise cipher suite count: %d"),
                 __func__, dot11RSNIE.pwise_cipher_suite_count );

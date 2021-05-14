@@ -78,7 +78,6 @@
 extern tSirRetStatus uMacPostCtrlMsg(void* pSirGlobal, tSirMbMsg* pMb);
 
 #define LOG_SIZE 256
-#define READ_MEMORY_DUMP_CMD     9
 #define TL_INIT_STATE            0
 
 static tSelfRecoveryStats gSelfRecoveryStats;
@@ -1471,12 +1470,6 @@ eHalStatus sme_Open(tHalHandle hHal)
          break;
       }
 
-      status = btcOpen(pMac);
-      if ( ! HAL_STATUS_SUCCESS( status ) ) {
-         smsLog( pMac, LOGE,
-                 "btcOpen open failed during initialization with status=%d", status );
-         break;
-      }
 #endif
 #ifdef FEATURE_OEM_DATA_SUPPORT
       status = oemData_OemDataReqOpen(pMac);
@@ -1639,7 +1632,7 @@ eHalStatus sme_SetPlmRequest(tHalHandle hHal, tpSirPlmReq pPlmReq)
     eHalStatus status;
     tANI_BOOLEAN ret = eANI_BOOLEAN_FALSE;
     tpAniSirGlobal pMac = PMAC_STRUCT(hHal);
-    tANI_U8 ch_list[WNI_CFG_VALID_CHANNEL_LIST] = {0};
+    tANI_U8 ch_list[WNI_CFG_VALID_CHANNEL_LIST_LEN] = {0};
     tANI_U8 count, valid_count = 0;
     vos_msg_t msg;
 
@@ -2159,14 +2152,6 @@ eHalStatus sme_HDDReadyInd(tHalHandle hHal)
                  smsLog( pMac, LOGE, "pmcReady failed with status=%d", status );
                  break;
              }
-#ifndef WLAN_MDM_CODE_REDUCTION_OPT
-             if(VOS_STATUS_SUCCESS != btcReady(hHal))
-             {
-                 status = eHAL_STATUS_FAILURE;
-                 smsLog( pMac, LOGE, "btcReady failed");
-                 break;
-             }
-#endif
 
 #if defined WLAN_FEATURE_VOWIFI
              if(VOS_STATUS_SUCCESS != rrmReady(hHal))
@@ -2186,14 +2171,6 @@ eHalStatus sme_HDDReadyInd(tHalHandle hHal)
               smsLog( pMac, LOGE, "csrReady failed with status=%d", status );
               break;
           }
-#ifndef WLAN_MDM_CODE_REDUCTION_OPT
-          if(VOS_STATUS_SUCCESS != btcReady(hHal))
-          {
-              status = eHAL_STATUS_FAILURE;
-              smsLog( pMac, LOGE, "btcReady failed");
-              break;
-          }
-#endif
 
 #if defined WLAN_FEATURE_VOWIFI
           if(VOS_STATUS_SUCCESS != rrmReady(hHal))
@@ -2588,31 +2565,6 @@ eHalStatus sme_SetEseBeaconRequest(tHalHandle hHal, const tANI_U8 sessionId,
 }
 
 #endif /* FEATURE_WLAN_ESE && FEATURE_WLAN_ESE_UPLOAD */
-
-/**
- * sme_process_fw_mem_dump_rsp - process fw memory dump response from WMA
- *
- * @pMac - pointer to MAC handle.
- * @pMsg - pointer to received SME msg.
- *
- * This function process the received SME message and calls the corresponding
- * callback which was already registered with SME.
- */
-#ifdef WLAN_FEATURE_MEMDUMP
-static void sme_process_fw_mem_dump_rsp(tpAniSirGlobal pMac, vos_msg_t* pMsg)
-{
-	if (pMsg->bodyptr) {
-		if (pMac->sme.fw_dump_callback)
-			pMac->sme.fw_dump_callback(pMac->hHdd,
-				(struct fw_dump_rsp*) pMsg->bodyptr);
-		vos_mem_free(pMsg->bodyptr);
-	}
-}
-#else
-static void sme_process_fw_mem_dump_rsp(tpAniSirGlobal pMac, vos_msg_t* pMsg)
-{
-}
-#endif
 eHalStatus sme_IbssPeerInfoResponseHandleer( tHalHandle hHal,
                                       tpSirIbssGetPeerInfoRspParams pIbssPeerInfoParams)
 {
@@ -2829,19 +2781,6 @@ eHalStatus sme_ProcessMsg(tHalHandle hHal, vos_msg_t* pMsg)
                 else
                 {
                     smsLog( pMac, LOGE, "Empty rsp message for meas (eWNI_SME_ACTION_FRAME_SEND_CNF), nothing to process");
-                }
-                break;
-          case eWNI_SME_COEX_IND:
-                MTRACE(vos_trace(VOS_MODULE_ID_SME, TRACE_CODE_SME_RX_WDA_MSG,
-                                              NO_SESSION, pMsg->type));
-                if(pMsg->bodyptr)
-                {
-                   status = btcHandleCoexInd((void *)pMac, pMsg->bodyptr);
-                   vos_mem_free(pMsg->bodyptr);
-                }
-                else
-                {
-                   smsLog(pMac, LOGE, "Empty rsp message for meas (eWNI_SME_COEX_IND), nothing to process");
                 }
                 break;
 
@@ -3329,9 +3268,6 @@ eHalStatus sme_ProcessMsg(tHalHandle hHal, vos_msg_t* pMsg)
                }
                vos_mem_free(pMsg->bodyptr);
                break;
-          case eWNI_SME_FW_DUMP_IND:
-               sme_process_fw_mem_dump_rsp(pMac, pMsg);
-               break;
           case eWNI_SME_SET_THERMAL_LEVEL_IND:
                if (pMac->sme.set_thermal_level_cb)
                {
@@ -3539,13 +3475,6 @@ eHalStatus sme_Close(tHalHandle hHal)
 #endif
 
 #ifndef WLAN_MDM_CODE_REDUCTION_OPT
-   status = btcClose(hHal);
-   if ( ! HAL_STATUS_SUCCESS( status ) ) {
-      smsLog( pMac, LOGE, "BTC close failed during sme close with status=%d",
-              status );
-      fail_status = status;
-   }
-
    status = sme_QosClose(pMac);
    if ( ! HAL_STATUS_SUCCESS( status ) ) {
       smsLog( pMac, LOGE, "Qos close failed during sme close with status=%d",
@@ -6831,94 +6760,6 @@ eHalStatus sme_TXFailMonitorStartStopInd(tHalHandle hHal, tANI_U8 tx_fail_count,
     return (status);
 }
 
-/* ---------------------------------------------------------------------------
-    \fn sme_BtcSignalBtEvent
-    \brief  API to signal Bluetooth (BT) event to the WLAN driver. Based on the
-            BT event type and the current operating mode of Libra (full power,
-            BMPS, UAPSD etc), appropriate Bluetooth Coexistence (BTC) strategy
-            would be employed.
-    \param  hHal - The handle returned by macOpen.
-    \param  pBtEvent -  Pointer to a caller allocated object of type tSmeBtEvent
-                        Caller owns the memory and is responsible for freeing it.
-    \return VOS_STATUS
-            VOS_STATUS_E_FAILURE  BT Event not passed to HAL. This can happen
-                                   if BTC execution mode is set to BTC_WLAN_ONLY
-                                   or BTC_PTA_ONLY.
-            VOS_STATUS_SUCCESS    BT Event passed to HAL
-  ---------------------------------------------------------------------------*/
-VOS_STATUS sme_BtcSignalBtEvent (tHalHandle hHal, tpSmeBtEvent pBtEvent)
-{
-    VOS_STATUS status = VOS_STATUS_E_FAILURE;
-
-#ifndef WLAN_MDM_CODE_REDUCTION_OPT
-    tpAniSirGlobal pMac = PMAC_STRUCT( hHal );
-
-    MTRACE(vos_trace(VOS_MODULE_ID_SME,
-           TRACE_CODE_SME_RX_HDD_BTC_SIGNALEVENT, NO_SESSION, 0));
-    if ( eHAL_STATUS_SUCCESS == sme_AcquireGlobalLock( &pMac->sme ) )
-    {
-        status = btcSignalBTEvent (hHal, pBtEvent);
-        sme_ReleaseGlobalLock( &pMac->sme );
-    }
-#endif
-    return (status);
-}
-
-/* ---------------------------------------------------------------------------
-    \fn sme_BtcSetConfig
-    \brief  API to change the current Bluetooth Coexistence (BTC) configuration
-            This function should be invoked only after CFG download has completed.
-            Calling it after sme_HDDReadyInd is recommended.
-    \param  hHal - The handle returned by macOpen.
-    \param  pSmeBtcConfig - Pointer to a caller allocated object of type tSmeBtcConfig.
-                            Caller owns the memory and is responsible for freeing it.
-    \return VOS_STATUS
-            VOS_STATUS_E_FAILURE  Config not passed to HAL.
-            VOS_STATUS_SUCCESS  Config passed to HAL
-  ---------------------------------------------------------------------------*/
-VOS_STATUS sme_BtcSetConfig (tHalHandle hHal, tpSmeBtcConfig pSmeBtcConfig)
-{
-    VOS_STATUS status = VOS_STATUS_E_FAILURE;
-#ifndef WLAN_MDM_CODE_REDUCTION_OPT
-    tpAniSirGlobal pMac = PMAC_STRUCT( hHal );
-    MTRACE(vos_trace(VOS_MODULE_ID_SME,
-                 TRACE_CODE_SME_RX_HDD_BTC_SETCONFIG, NO_SESSION, 0));
-    if ( eHAL_STATUS_SUCCESS == sme_AcquireGlobalLock( &pMac->sme ) )
-    {
-        status = btcSetConfig (hHal, pSmeBtcConfig);
-        sme_ReleaseGlobalLock( &pMac->sme );
-    }
-#endif
-    return (status);
-}
-
-/* ---------------------------------------------------------------------------
-    \fn sme_BtcGetConfig
-    \brief  API to retrieve the current Bluetooth Coexistence (BTC) configuration
-    \param  hHal - The handle returned by macOpen.
-    \param  pSmeBtcConfig - Pointer to a caller allocated object of type
-                            tSmeBtcConfig. Caller owns the memory and is responsible
-                            for freeing it.
-    \return VOS_STATUS
-            VOS_STATUS_E_FAILURE - failure
-            VOS_STATUS_SUCCESS  success
-  ---------------------------------------------------------------------------*/
-VOS_STATUS sme_BtcGetConfig (tHalHandle hHal, tpSmeBtcConfig pSmeBtcConfig)
-{
-    VOS_STATUS status = VOS_STATUS_E_FAILURE;
-#ifndef WLAN_MDM_CODE_REDUCTION_OPT
-    tpAniSirGlobal pMac = PMAC_STRUCT( hHal );
-
-    MTRACE(vos_trace(VOS_MODULE_ID_SME,
-             TRACE_CODE_SME_RX_HDD_BTC_GETCONFIG, NO_SESSION, 0));
-    if ( eHAL_STATUS_SUCCESS == sme_AcquireGlobalLock( &pMac->sme ) )
-    {
-        status = btcGetConfig (hHal, pSmeBtcConfig);
-        sme_ReleaseGlobalLock( &pMac->sme );
-    }
-#endif
-    return (status);
-}
 /* ---------------------------------------------------------------------------
     \fn sme_SetCfgPrivacy
     \brief  API to set configure privacy parameters
@@ -12288,13 +12129,21 @@ eHalStatus sme_GetLinkSpeed(tHalHandle hHal, tSirLinkSpeedInfo *lsReq, void *pls
            pMac->sme.pLinkSpeedIndCb = pCallbackfn;
         }
         /* serialize the req through MC thread */
-        vosMessage.bodyptr = lsReq;
+        vosMessage.bodyptr = vos_mem_malloc(sizeof(*lsReq));
+        if (NULL == vosMessage.bodyptr) {
+           VOS_TRACE(VOS_MODULE_ID_SME, VOS_TRACE_LEVEL_ERROR,
+                     "%s: Memory allocation failed.", __func__);
+                     sme_ReleaseGlobalLock(&pMac->sme);
+           return eHAL_STATUS_E_MALLOC_FAILED;
+        }
+        vos_mem_copy(vosMessage.bodyptr, lsReq, sizeof(*lsReq));
         vosMessage.type    = WDA_GET_LINK_SPEED;
         vosStatus = vos_mq_post_message(VOS_MQ_ID_WDA, &vosMessage);
         if (!VOS_IS_STATUS_SUCCESS(vosStatus))
         {
            VOS_TRACE(VOS_MODULE_ID_SME, VOS_TRACE_LEVEL_ERROR,
                      "%s: Post Link Speed msg fail", __func__);
+           vos_mem_free(vosMessage.bodyptr);
            status = eHAL_STATUS_FAILURE;
         }
         sme_ReleaseGlobalLock(&pMac->sme);
@@ -16329,76 +16178,6 @@ eHalStatus sme_SetLinkLayerStatsIndCB
 
 #endif /* WLAN_FEATURE_LINK_LAYER_STATS */
 
-/**
- * sme_fw_mem_dump_register_cb() - Register fw memory dump callback
- *
- * @hHal - MAC global handle
- * @callback_routine - callback routine from HDD
- *
- * This API is invoked by HDD to register its callback in SME
- *
- * Return: eHalStatus
- */
-#ifdef WLAN_FEATURE_MEMDUMP
-eHalStatus sme_fw_mem_dump_register_cb(tHalHandle hal,
-		void (*callback_routine)(void *cb_context,
-					 struct fw_dump_rsp *rsp))
-{
-	eHalStatus status = eHAL_STATUS_SUCCESS;
-	tpAniSirGlobal pmac = PMAC_STRUCT(hal);
-
-	status = sme_AcquireGlobalLock(&pmac->sme);
-	if (eHAL_STATUS_SUCCESS == status) {
-		pmac->sme.fw_dump_callback = callback_routine;
-		sme_ReleaseGlobalLock(&pmac->sme);
-	} else {
-		VOS_TRACE(VOS_MODULE_ID_SME, VOS_TRACE_LEVEL_ERROR,
-			  FL("sme_AcquireGlobalLock error"));
-	}
-
-	return status;
-}
-#else
-eHalStatus sme_fw_mem_dump_register_cb(tHalHandle hal,
-		void (*callback_routine)(void *cb_context,
-					 struct fw_dump_rsp *rsp))
-{
-	return eHAL_STATUS_SUCCESS;
-}
-#endif /* WLAN_FEATURE_MEMDUMP */
-
-/**
- * sme_fw_mem_dump_unregister_cb() - Unregister fw memory dump callback
- *
- * @hHal - MAC global handle
- *
- * This API is invoked by HDD to unregister its callback in SME
- *
- * Return: eHalStatus
- */
-#ifdef WLAN_FEATURE_MEMDUMP
-eHalStatus sme_fw_mem_dump_unregister_cb(tHalHandle hal)
-{
-	eHalStatus status;
-	tpAniSirGlobal pmac = PMAC_STRUCT(hal);
-
-	status = sme_AcquireGlobalLock(&pmac->sme);
-	if (eHAL_STATUS_SUCCESS == status) {
-		pmac->sme.fw_dump_callback = NULL;
-		sme_ReleaseGlobalLock(&pmac->sme);
-	} else {
-		VOS_TRACE(VOS_MODULE_ID_SME, VOS_TRACE_LEVEL_ERROR,
-			  FL("sme_AcquireGlobalLock error"));
-	}
-
-	return status;
-}
-#else
-eHalStatus sme_fw_mem_dump_unregister_cb(tHalHandle hal)
-{
-	return eHAL_STATUS_SUCCESS;
-}
-#endif /* WLAN_FEATURE_MEMDUMP */
 
 #ifdef WLAN_FEATURE_ROAM_OFFLOAD
 /*--------------------------------------------------------------------------
@@ -16994,80 +16773,6 @@ VOS_STATUS sme_apfind_set_cmd(struct sme_ap_find_request_req *input)
      return VOS_STATUS_SUCCESS;
 }
 #endif /* WLAN_FEATURE_APFIND */
-/**
- * sme_fw_mem_dump() - Get FW memory dump
- *
- * This API is invoked by HDD to indicate FW to start
- * dumping firmware memory.
- *
- * Return: eHalStatus
- */
-#ifdef WLAN_FEATURE_MEMDUMP
-eHalStatus sme_fw_mem_dump(tHalHandle hHal, void *recvd_req)
-{
-	eHalStatus status = eHAL_STATUS_SUCCESS;
-	VOS_STATUS vos_status = VOS_STATUS_SUCCESS;
-	tpAniSirGlobal pMac = PMAC_STRUCT(hHal);
-	vos_msg_t msg;
-	struct fw_dump_req* send_req;
-	struct fw_dump_seg_req seg_req;
-	int loop;
-
-	send_req = vos_mem_malloc(sizeof(*send_req));
-	if(!send_req) {
-		VOS_TRACE(VOS_MODULE_ID_SME, VOS_TRACE_LEVEL_ERROR,
-			FL("Memory allocation failed for WDA_FW_MEM_DUMP"));
-		return eHAL_STATUS_FAILURE;
-	}
-	vos_mem_copy(send_req, recvd_req, sizeof(*send_req));
-
-	VOS_TRACE(VOS_MODULE_ID_SME, VOS_TRACE_LEVEL_INFO,
-		  FL("request_id:%d num_seg:%d"),
-		  send_req->request_id, send_req->num_seg);
-        VOS_TRACE(VOS_MODULE_ID_SME, VOS_TRACE_LEVEL_INFO,
-		  FL("Segment Information"));
-	for (loop = 0; loop < send_req->num_seg; loop++) {
-		seg_req = send_req->segment[loop];
-		VOS_TRACE(VOS_MODULE_ID_SME, VOS_TRACE_LEVEL_INFO,
-			  FL("seg_number:%d"), loop);
-		VOS_TRACE(VOS_MODULE_ID_SME, VOS_TRACE_LEVEL_INFO,
-			  FL("seg_id:%d start_addr_lo:0x%x start_addr_hi:0x%x"),
-			  seg_req.seg_id, seg_req.seg_start_addr_lo,
-			  seg_req.seg_start_addr_hi);
-		VOS_TRACE(VOS_MODULE_ID_SME, VOS_TRACE_LEVEL_INFO,
-			  FL("seg_length:%d dst_addr_lo:0x%x dst_addr_hi:0x%x"),
-			  seg_req.seg_length, seg_req.dst_addr_lo,
-			  seg_req.dst_addr_hi);
-	}
-
-	if (eHAL_STATUS_SUCCESS == sme_AcquireGlobalLock(&pMac->sme)) {
-		msg.bodyptr = send_req;
-		msg.type = WDA_FW_MEM_DUMP_REQ;
-		msg.reserved = 0;
-
-		vos_status = vos_mq_post_message(VOS_MODULE_ID_WDA, &msg);
-		if (VOS_STATUS_SUCCESS != vos_status) {
-			VOS_TRACE(VOS_MODULE_ID_SME, VOS_TRACE_LEVEL_ERROR,
-				  FL("Not able to post WDA_FW_MEM_DUMP"));
-			vos_mem_free(send_req);
-			status = eHAL_STATUS_FAILURE;
-		}
-		sme_ReleaseGlobalLock(&pMac->sme);
-	} else {
-		VOS_TRACE(VOS_MODULE_ID_SME, VOS_TRACE_LEVEL_ERROR,
-			FL("Failed to acquire SME Global Lock"));
-		vos_mem_free(send_req);
-		status = eHAL_STATUS_FAILURE;
-	}
-
-	return status;
-}
-#else
-eHalStatus sme_fw_mem_dump(tHalHandle hHal, void *recvd_req)
-{
-	return eHAL_STATUS_SUCCESS;
-}
-#endif /* WLAN_FEATURE_MEMDUMP */
 #ifdef FEATURE_WLAN_MCC_TO_SCC_SWITCH
 /*
  * sme_validate_sap_channel_switch() - validate target channel switch w.r.t
