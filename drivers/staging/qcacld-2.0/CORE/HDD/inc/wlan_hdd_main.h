@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2016 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2017 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -247,6 +247,8 @@
 
 typedef v_U8_t tWlanHddMacAddr[HDD_MAC_ADDR_LEN];
 
+#define MAX_PROBE_REQ_OUIS 16
+
 /*
  * Generic asynchronous request/response support
  *
@@ -300,7 +302,6 @@ extern spinlock_t hdd_context_lock;
 #define STATS_CONTEXT_MAGIC 0x53544154   //STAT
 #define RSSI_CONTEXT_MAGIC  0x52535349   //RSSI
 #define POWER_CONTEXT_MAGIC 0x504F5752   //POWR
-#define SNR_CONTEXT_MAGIC   0x534E5200   //SNR
 #define LINK_CONTEXT_MAGIC  0x4C494E4B   //LINKSPEED
 #define LINK_STATUS_MAGIC   0x4C4B5354   //LINKSTATUS(LNST)
 #define TEMP_CONTEXT_MAGIC 0x74656d70   // TEMP (temperature)
@@ -1160,8 +1161,6 @@ struct hdd_adapter_s
     v_TIME_t startRocTs;
 
     /* State for synchronous OCB requests to WMI */
-    struct sir_ocb_set_config_response ocb_set_config_resp;
-    struct sir_ocb_get_tsf_timer_response ocb_get_tsf_timer_resp;
     struct sir_dcc_get_stats_response *dcc_get_stats_resp;
     struct sir_dcc_update_ndl_response dcc_update_ndl_resp;
 
@@ -1698,14 +1697,7 @@ struct hdd_context_s
     struct hdd_ll_stats_context ll_stats_context;
 #endif /* End of WLAN_FEATURE_LINK_LAYER_STATS */
 
-#ifdef WLAN_FEATURE_MEMDUMP
-    uint8_t *fw_dump_loc;
-    uint32_t dump_loc_paddr;
-    vos_timer_t memdump_cleanup_timer;
     struct mutex memdump_lock;
-    bool memdump_in_progress;
-    bool memdump_init_done;
-#endif /* WLAN_FEATURE_MEMDUMP */
     uint16_t driver_dump_size;
     uint8_t *driver_dump_mem;
 
@@ -1751,6 +1743,9 @@ struct hdd_context_s
     unsigned int last_scan_bug_report_timestamp;
     bool driver_being_stopped; /* Track if DRIVER STOP cmd is sent */
     uint8_t max_mc_addr_list;
+
+    uint32_t no_of_probe_req_ouis;
+    struct vendor_oui *probe_req_voui;
 };
 
 /*---------------------------------------------------------------------------
@@ -1930,10 +1925,6 @@ static inline void hdd_wlan_green_ap_del_sta(struct hdd_context_s *hdd_ctx) {}
 void wlan_hdd_cfg80211_stats_ext_init(hdd_context_t *pHddCtx);
 #endif
 
-#ifdef WLAN_FEATURE_LINK_LAYER_STATS
-void wlan_hdd_cfg80211_link_layer_stats_init(hdd_context_t *pHddCtx);
-#endif
-
 void hdd_update_macaddr(hdd_config_t *cfg_ini, v_MACADDR_t hw_macaddr);
 #if defined(FEATURE_WLAN_LFR) && defined(WLAN_FEATURE_ROAM_SCAN_OFFLOAD)
 void wlan_hdd_disable_roaming(hdd_adapter_t *pAdapter);
@@ -1980,12 +1971,27 @@ static inline void hdd_init_ll_stats_ctx(hdd_context_t *hdd_ctx)
 
 	return;
 }
+
+/**
+ * wlan_hdd_cfg80211_link_layer_stats_init() - Initialize llstats callbacks
+ * @pHddCtx: HDD context
+ *
+ * Return: none
+ */
+void wlan_hdd_cfg80211_link_layer_stats_init(hdd_context_t *pHddCtx);
+
 #else
 static inline bool hdd_link_layer_stats_supported(void)
 {
 	return false;
 }
+
 static inline void hdd_init_ll_stats_ctx(hdd_context_t *hdd_ctx)
+{
+	return;
+}
+
+void wlan_hdd_cfg80211_link_layer_stats_init(hdd_context_t *pHddCtx)
 {
 	return;
 }
@@ -1994,8 +2000,6 @@ static inline void hdd_init_ll_stats_ctx(hdd_context_t *hdd_ctx)
 void hdd_get_fw_version(hdd_context_t *hdd_ctx,
 			uint32_t *major_spid, uint32_t *minor_spid,
 			uint32_t *siid, uint32_t *crmid);
-
-bool hdd_is_memdump_supported(void);
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,28))
 static inline void

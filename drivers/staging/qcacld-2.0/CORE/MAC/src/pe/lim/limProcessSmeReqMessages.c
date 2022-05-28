@@ -1193,7 +1193,7 @@ static eHalStatus limSendHalStartScanOffloadReq(tpAniSirGlobal pMac,
     /* The tSirScanOffloadReq will reserve the space for first channel,
        so allocate the memory for (numChannels - 1) and uIEFieldLen */
     len = sizeof(tSirScanOffloadReq) + (pScanReq->channelList.numChannels - 1) +
-        pScanReq->uIEFieldLen;
+        pScanReq->uIEFieldLen + pScanReq->oui_field_len;
 
     if (!pMac->per_band_chainmask_supp) {
         if (IS_DOT11_MODE_HT(pScanReq->dot11mode)) {
@@ -1287,7 +1287,8 @@ static eHalStatus limSendHalStartScanOffloadReq(tpAniSirGlobal pMac,
 
     pScanOffloadReq->uIEFieldLen = pScanReq->uIEFieldLen;
     pScanOffloadReq->uIEFieldOffset = len - addn_ie_len -
-                                      pScanOffloadReq->uIEFieldLen;
+                                      pScanOffloadReq->uIEFieldLen -
+                                      pScanReq->oui_field_len;
     vos_mem_copy(
             (tANI_U8 *) pScanOffloadReq + pScanOffloadReq->uIEFieldOffset,
             (tANI_U8 *) pScanReq + pScanReq->uIEFieldOffset,
@@ -1321,6 +1322,32 @@ static eHalStatus limSendHalStartScanOffloadReq(tpAniSirGlobal pMac,
             pScanOffloadReq->uIEFieldLen += vht_cap_len;
         }
 #endif /* WLAN_FEATURE_11AC */
+    }
+
+    pScanOffloadReq->enable_scan_randomization =
+                                           pScanReq->enable_scan_randomization;
+    if (pScanOffloadReq->enable_scan_randomization) {
+        vos_mem_copy(pScanOffloadReq->mac_addr, pScanReq->mac_addr,
+                     VOS_MAC_ADDR_SIZE);
+        vos_mem_copy(pScanOffloadReq->mac_addr_mask, pScanReq->mac_addr_mask,
+                     VOS_MAC_ADDR_SIZE);
+    }
+
+    pScanOffloadReq->oui_field_len = pScanReq->oui_field_len;
+    pScanOffloadReq->num_vendor_oui = pScanReq->num_vendor_oui;
+    pScanOffloadReq->ie_whitelist = pScanReq->ie_whitelist;
+    if (pScanOffloadReq->ie_whitelist)
+        vos_mem_copy(pScanOffloadReq->probe_req_ie_bitmap,
+                     pScanReq->probe_req_ie_bitmap,
+                     PROBE_REQ_BITMAP_LEN * sizeof(uint32_t));
+    pScanOffloadReq->oui_field_offset = sizeof(tSirScanOffloadReq) +
+                               (pScanOffloadReq->channelList.numChannels - 1) +
+                               pScanOffloadReq->uIEFieldLen;
+    if (pScanOffloadReq->num_vendor_oui != 0) {
+        vos_mem_copy(
+            (tANI_U8 *) pScanOffloadReq + pScanOffloadReq->oui_field_offset,
+            (uint8_t *) pScanReq + pScanReq->oui_field_offset,
+            pScanReq->oui_field_len);
     }
 
     rc = wdaPostCtrlMsg(pMac, &msg);
@@ -6563,8 +6590,17 @@ limUpdateIBssPropAddIEs(tpAniSirGlobal pMac, tANI_U8 **pDstData_buff,
         vos_mem_copy(vendor_ie, pModifyIE->pIEBuffer,
                      pModifyIE->ieBufferlength);
     } else {
-        uint16_t new_length = pModifyIE->ieBufferlength + *pDstDataLen;
-        uint8_t *new_ptr = vos_mem_malloc(new_length);
+	uint8_t *new_ptr;
+	uint16_t new_length;
+
+	if (USHRT_MAX - pModifyIE->ieBufferlength < *pDstDataLen) {
+			limLog(pMac,LOGE,FL("U16 overflow due to %d + %d"),
+				pModifyIE->ieBufferlength, *pDstDataLen);
+			return false;
+		}
+
+        new_length = pModifyIE->ieBufferlength + *pDstDataLen;
+        new_ptr = vos_mem_malloc(new_length);
 
         if (NULL == new_ptr) {
             limLog(pMac, LOGE, FL("Memory allocation failed."));
@@ -6938,6 +6974,21 @@ limProcessUpdateAddIEs(tpAniSirGlobal pMac, tANI_U32 *pMsg)
                 tANI_U16 new_length = pUpdateAddIEs->updateIE.ieBufferlength +
                                 psessionEntry->addIeParams.probeRespDataLen;
                 tANI_U8 *new_ptr = vos_mem_malloc(new_length);
+                /* Multiple back to back append commands
+                 * can lead to a huge length.So, check
+                 * for the validity of the length.
+                 */
+                if (psessionEntry->addIeParams.probeRespDataLen >
+                     (USHRT_MAX - pUpdateAddIEs->updateIE.ieBufferlength))
+                {
+                    limLog(pMac, LOGE,
+                           FL("IE Length overflow, curr:%d, new:%d."),
+                           psessionEntry->addIeParams.probeRespDataLen,
+                           pUpdateAddIEs->updateIE.ieBufferlength);
+                    vos_mem_free(pUpdateAddIEs->updateIE.pAdditionIEBuffer);
+                    pUpdateAddIEs->updateIE.pAdditionIEBuffer = NULL;
+                    return;
+                }
                 if (NULL == new_ptr)
                 {
                     limLog(pMac, LOGE, FL("Memory allocation failed."));

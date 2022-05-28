@@ -101,12 +101,15 @@
 
 #define FRAGMENT_SIZE 3072
 
+#define WMA_MAX_MGMT_MPDU_LEN     2000
+
 #define WMA_INVALID_VDEV_ID				0xFF
 #define MAX_MEM_CHUNKS					32
 #define WMA_MAX_VDEV_SIZE				20
 #define WMA_VDEV_TBL_ENTRY_ADD				1
 #define WMA_VDEV_TBL_ENTRY_DEL				0
 
+#define WMA_SVC_MSG_MAX_SIZE                            1536
 
 /* 11A/G channel boundary */
 #define WMA_11A_CHANNEL_BEGIN           34
@@ -886,6 +889,7 @@ typedef struct wma_handle {
 	uint32_t wow_ipv6_mcast_na_stats;
 	uint32_t wow_icmpv4_count;
 	uint32_t wow_icmpv6_count;
+	uint32_t wow_oem_response_wake_up_count;
 	uint32_t wow_wakeup_enable_mask;
 	uint32_t wow_wakeup_disable_mask;
 	uint16_t max_mgmt_tx_fail_count;
@@ -1346,6 +1350,7 @@ struct wma_set_key_params {
 	u_int32_t key_idx;
 	bool unicast;
 	u_int8_t key_data[SIR_MAC_MAX_KEY_LENGTH];
+	u_int8_t key_rsc[SIR_MAC_MAX_KEY_RSC_LEN];
 };
 
 typedef struct {
